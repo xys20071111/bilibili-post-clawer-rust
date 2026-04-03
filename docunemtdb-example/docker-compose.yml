@@ -1,0 +1,9 @@
+services:
+  documentdb:
+    image: ghcr.io/microsoft/documentdb/documentdb-local:latest
+    restart: on-failure
+    ports:
+      - 10260:10260
+    volumes:
+      - ./data:/home/documentdb/postgresql/data
+    command: "--username ${DB_USERNAME:-username} --password ${DB_PASSWORD:-password}"
