@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 const SQL_SCHEME: &str = r#"
 -- Post queue 表：待获取的动态ID队列（替代 DenoKV ["postId", id]）
@@ -71,16 +71,6 @@ impl RuntimeDb {
                 params![post_id],
             )
             .unwrap();
-    }
-
-    pub fn has_pending_post(&self, post_id: u64) -> bool {
-        self.conn
-            .query_row(
-                "SELECT 1 FROM post_queue WHERE post_id = ?1",
-                params![post_id],
-                |_| Ok(true),
-            )
-            .unwrap_or(false)
     }
 
     pub fn get_pending_posts(&self) -> Vec<PendingPost> {

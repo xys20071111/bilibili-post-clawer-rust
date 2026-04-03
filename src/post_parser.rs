@@ -75,10 +75,6 @@ fn find_module<'a>(modules: &'a Value, module_type: &str) -> Option<&'a Value> {
     None
 }
 
-fn extract_u64_from_str(value: &Value) -> Option<u64> {
-    value.as_str().and_then(|s| s.parse::<u64>().ok())
-}
-
 pub fn parse_dynamic_item(item: &Value) -> ParsedDynamicItem {
     let id_str = item["id_str"].as_str().unwrap_or("0");
     let id: u64 = id_str.parse().unwrap_or(0);
@@ -159,7 +155,7 @@ pub fn parse_dynamic_item(item: &Value) -> ParsedDynamicItem {
     let item_type = item["type"].as_str().unwrap_or("");
 
     let (dynamic_type, original_post_id, video_info, image_urls, content) = if is_new_version {
-        parse_new_version(item_type, dynamic_module, desc_module, item)
+        parse_new_version(item_type, dynamic_module, desc_module)
     } else {
         parse_old_version(item_type, dynamic_module, desc_module, item)
     };
@@ -194,7 +190,6 @@ fn parse_new_version(
     item_type: &str,
     dynamic_module: Option<&Value>,
     desc_module: Option<&Value>,
-    item: &Value,
 ) -> (
     DynamicType,
     Option<u64>,

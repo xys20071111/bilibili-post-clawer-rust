@@ -40,7 +40,6 @@ pub struct ReplyDocument {
 }
 
 pub struct ResultDb {
-    client: Client,
     post_collection: Collection<PostDocument>,
     reply_collection: Collection<ReplyDocument>,
 }
@@ -56,7 +55,6 @@ impl ResultDb {
         let post_collection = database.collection(post_collection_name);
         let reply_collection = database.collection(reply_collection_name);
         let db = Self {
-            client,
             post_collection,
             reply_collection,
         };
@@ -132,9 +130,5 @@ impl ResultDb {
         };
         self.reply_collection.insert_one(reply).await?;
         Ok(())
-    }
-
-    pub async fn close(self) {
-        let _ = self.client.shutdown().await;
     }
 }
