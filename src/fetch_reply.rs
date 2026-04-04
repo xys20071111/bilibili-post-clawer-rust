@@ -1,5 +1,4 @@
-use std::thread;
-use std::time::Duration;
+use std::{thread, time, time::Duration};
 
 use headless_chrome::Tab;
 use serde_json::{Value, json};
@@ -150,15 +149,16 @@ async fn fetch_post_replies_from_browser(
                     .as_str(),
             );
 
-            let result: Value = serde_json::from_str(
-                tab.evaluate(&exec_code, true)
-                    .unwrap()
-                    .value
-                    .unwrap()
-                    .as_str()
-                    .unwrap(),
-            )
-            .unwrap();
+            let result = tab.evaluate(exec_code.as_str(), true).unwrap();
+            let result = match result.value {
+                Some(val) => val,
+                None => {
+                    eprintln!("出现空白响应，是不是网断了？休眠 3 秒后继续重试...");
+                    thread::sleep(time::Duration::from_secs(3));
+                    continue;
+                }
+            };
+            let result: Value = serde_json::from_str(result.as_str().unwrap()).unwrap();
 
             if result.is_null() {
                 println!("IP 被 ban，停止获取");

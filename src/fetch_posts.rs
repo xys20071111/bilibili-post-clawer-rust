@@ -1,4 +1,3 @@
-use core::panic;
 use headless_chrome::Tab;
 use serde_json::{Value, json};
 use std::{
@@ -50,15 +49,16 @@ pub fn fetch_post_ids_from_browser(
         })()"#
         .replace("{{missionInfo}}", serde_json::to_string(&json!({ "mid": source.id, "offset": current_offset })).unwrap().as_str());
         for _i in 0..5 {
-            let result: Value = serde_json::from_str(
-                tab.evaluate(&exec_code, true)
-                    .unwrap()
-                    .value
-                    .unwrap()
-                    .as_str()
-                    .unwrap(),
-            )
-            .unwrap();
+            let result = tab.evaluate(&exec_code, true).unwrap().value;
+            let result = match result {
+                Some(value) => value,
+                None => {
+                    eprintln!("出现空白响应，是不是网断了？休眠 3 秒后继续重试...");
+                    thread::sleep(time::Duration::from_secs(3));
+                    continue;
+                }
+            };
+            let result: Value = serde_json::from_str(result.as_str().unwrap()).unwrap();
             if result["code"] != 0 {
                 eprintln!(
                     "请求失败！错误码: {}. 是不是ip被ban了？",
@@ -123,12 +123,10 @@ return await fetchPostDetails();
             let result = tab.evaluate(exec_code.as_str(), true).unwrap();
             let result = match result.value {
                 Some(val) => val,
-                _ => {
-                    eprintln!("出现异常!!!");
-                    eprintln!("{:?}", result);
-                    eprintln!("exec_code:\n{}", exec_code);
-                    wait_until_enter();
-                    panic!("出现空白响应")
+                None => {
+                    eprintln!("出现空白响应，是不是网断了？休眠 3 秒后继续重试...");
+                    thread::sleep(time::Duration::from_secs(3));
+                    continue;
                 }
             };
             let result: Value = serde_json::from_str(result.as_str().unwrap()).unwrap();
