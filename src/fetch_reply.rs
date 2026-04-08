@@ -12,6 +12,7 @@ use crate::{
     },
     post_parser::parse_dynamic_item,
     utils::wait_until_enter,
+    wbi_sign::{encode_wbi, get_wbi_keys},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -133,11 +134,19 @@ async fn fetch_post_replies_from_browser(
         let mut success = false;
 
         while !success {
+            let wbi_key = get_wbi_keys().await.unwrap();
+            let wbi_signed_params = encode_wbi(
+                vec![
+                    ("oid", oid.to_string()),
+                    ("type", type_val.to_string()),
+                    ("pn", page_num.to_string()),
+                ],
+                wbi_key,
+            );
             let exec_code = r#"
             (async () => {
                 async function fetchPostReplies() {
-                    const { oid, type, pageNum } = {{missionInfo}}
-                    const url = `https://api.bilibili.com/x/v2/reply?oid=${oid}&type=${type}&pn=${pageNum}`
+                    const url = 'https://api.bilibili.com/x/v2/reply?{{missionInfo}}'
                     const req = await fetch(url, {
                         credentials: "include",
                     })
@@ -152,12 +161,8 @@ async fn fetch_post_replies_from_browser(
                 }
                 return await fetchPostReplies()
             })()
-            "#.replace(
-                "{{missionInfo}}",
-                serde_json::to_string(&json!({ "oid": oid, "type": type_val, "pageNum": page_num }))
-                    .unwrap()
-                    .as_str(),
-            );
+            "#
+            .replace("{{missionInfo}}", wbi_signed_params.as_str());
 
             let result = tab.evaluate(exec_code.as_str(), true).unwrap();
             let result = match result.value {
@@ -186,6 +191,8 @@ async fn fetch_post_replies_from_browser(
                     }
                     -404 => {
                         println!("动态 {} 没有评论或已开启精选，返回码为 -404", oid);
+                        println!("{}", exec_code);
+                        wait_until_enter();
                         has_more = false;
                         success = true;
                         break;

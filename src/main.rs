@@ -6,6 +6,7 @@ mod fetch_reply;
 mod open_page;
 mod post_parser;
 mod utils;
+mod wbi_sign;
 
 use std::{
     fs::File,
@@ -119,6 +120,7 @@ async fn handle_login_mode(config_path: &str, _debug: bool) {
     let browser = open_page::open_browser(false, false, &config.browser_data_path).unwrap();
     let tab = browser.new_tab().unwrap();
     tab.navigate_to("https://www.bilibili.com").unwrap();
+    inject_functions(&tab);
     wait_until_enter();
     exit(0)
 }

@@ -27,11 +27,4 @@ pub fn inject_functions(tab: &Tab) {
         }),
     )
     .unwrap();
-    tab.expose_function(
-        "denoLog",
-        Arc::new(|msg: serde_json::Value| {
-            println!("[WebLog] {}", msg);
-        }),
-    )
-    .unwrap();
 }
