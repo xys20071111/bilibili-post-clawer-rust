@@ -103,16 +103,6 @@ impl ResultDb {
             .unwrap();
     }
 
-    pub async fn get_all_posts(&self) -> Vec<PostDocument> {
-        self.post_collection
-            .find(doc! {})
-            .await
-            .unwrap()
-            .try_collect()
-            .await
-            .unwrap()
-    }
-
     pub async fn get_all_posts_cursor(&self) -> Cursor<PostDocument> {
         self.post_collection.find(doc! {}).await.unwrap()
     }

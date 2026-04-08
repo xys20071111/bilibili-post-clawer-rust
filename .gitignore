@@ -4,3 +4,4 @@ original-project
 /configs
 /dbs
 *.jsonl
+*.profraw

@@ -190,8 +190,9 @@ async fn handle_post_mode(config_path: &str, debug: bool, mode: FetchMode) {
     fetch_posts::fetch_post_details_from_browser(&tab, &result_db, &runtime_db, &pending_posts)
         .await;
 
-    let posts = result_db.get_all_posts().await;
-    for item in posts {
+    let mut posts = result_db.get_all_posts_cursor().await;
+    while posts.has_next() {
+        let item = posts.next().await.unwrap().unwrap();
         let data_value = serde_json::to_value(&item.data).unwrap();
         let parsed = parse_dynamic_item(&data_value);
         if let DynamicType::Forward = parsed.dynamic_type
