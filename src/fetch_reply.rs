@@ -1,4 +1,5 @@
 use futures_util::StreamExt;
+use serde::de::value::Error;
 use std::{thread, time, time::Duration};
 
 use headless_chrome::Tab;
@@ -134,7 +135,14 @@ async fn fetch_post_replies_from_browser(
         let mut success = false;
 
         while !success {
-            let wbi_key = get_wbi_keys().await.unwrap();
+            let wbi_key = match get_wbi_keys().await {
+                Ok(val) => val,
+                Error => {
+                    eprintln!("获取wbi密钥失败，等待 10 秒后重试");
+                    thread::sleep(Duration::from_secs(10));
+                    continue;
+                }
+            };
             let wbi_signed_params = encode_wbi(
                 vec![
                     ("oid", oid.to_string()),
