@@ -18,7 +18,7 @@ use std::{
 use clap::Command;
 use fetch_reply::FetchMode;
 
-use futures_util::{StreamExt, TryStreamExt};
+use futures_util::StreamExt;
 use open_page::inject_functions;
 
 use crate::{

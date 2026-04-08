@@ -1,3 +1,4 @@
+use futures_util::StreamExt;
 use std::{thread, time, time::Duration};
 
 use headless_chrome::Tab;
@@ -26,21 +27,30 @@ pub async fn fetch_replies_from_browser(
     config: &Configure,
     mode: FetchMode,
 ) {
-    let posts = result_db.get_all_posts().await;
-    let post_ids: Vec<(u64, u64)> = posts
-        .iter()
-        .filter_map(|post| {
-            let data_value = serde_json::to_value(&post.data).unwrap();
-            let parsed = parse_dynamic_item(&data_value);
-            if let Some(comment_id) = parsed.comment_area.comment_id {
-                let comment_id_num = comment_id.parse::<u64>().ok()?;
-                let comment_type = parsed.comment_area.comment_type?;
-                Some((comment_id_num, comment_type))
-            } else {
-                None
-            }
-        })
-        .collect();
+    let mut posts = result_db.get_all_posts_cursor().await;
+    let mut post_ids: Vec<(u64, u64)> = Vec::new();
+    while posts.has_next() {
+        let post = posts.next().await.unwrap().unwrap().data;
+        let parsed = parse_dynamic_item(&serde_json::to_value(post).unwrap());
+        if let Some(comment_id) = parsed.comment_area.comment_id {
+            let comment_id_num = comment_id.parse::<u64>().ok().unwrap();
+            let comment_type = parsed.comment_area.comment_type.unwrap();
+            post_ids.push((comment_id_num, comment_type));
+        }
+    }
+    // .iter()
+    // .filter_map(|post| {
+    //     let data_value = serde_json::to_value(&post.data).unwrap();
+    //     let parsed = parse_dynamic_item(&data_value);
+    //     if let Some(comment_id) = parsed.comment_area.comment_id {
+    //         let comment_id_num = comment_id.parse::<u64>().ok()?;
+    //         let comment_type = parsed.comment_area.comment_type?;
+    //         Some((comment_id_num, comment_type))
+    //     } else {
+    //         None
+    //     }
+    // })
+    // .collect();
 
     let total_task_count = post_ids.len();
     println!("总任务数：{}", total_task_count);
