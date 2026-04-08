@@ -3,3 +3,4 @@ browser*
 original-project
 /configs
 /dbs
+*.jsonl

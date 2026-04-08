@@ -29,6 +29,7 @@ pub struct PendingPost {
 }
 
 pub struct ReplyProgress {
+    // oid是primary key，还是留着吧
     pub oid: u64,
     pub page_num: u64,
     pub last_fetched_at: Option<u64>,

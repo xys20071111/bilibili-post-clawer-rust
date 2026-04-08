@@ -1,7 +1,7 @@
 use bson::{DateTime, Document, doc, oid::ObjectId};
 use futures_util::TryStreamExt;
 use mongodb::{
-    Client, Collection, IndexModel,
+    Client, Collection, Cursor, IndexModel,
     options::{IndexOptions, ReplaceOptions},
 };
 use serde::{Deserialize, Serialize};
@@ -111,6 +111,10 @@ impl ResultDb {
             .try_collect()
             .await
             .unwrap()
+    }
+
+    pub async fn get_all_posts_cursor(&self) -> Cursor<PostDocument> {
+        self.post_collection.find(doc! {}).await.unwrap()
     }
 
     pub async fn get_post_by_id(&self, id: u64) -> Option<PostDocument> {
