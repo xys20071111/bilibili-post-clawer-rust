@@ -1,9 +1,8 @@
 use futures_util::StreamExt;
-use serde::de::value::Error;
 use std::{thread, time, time::Duration};
 
 use headless_chrome::Tab;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::{
     config_type::Configure,
@@ -13,7 +12,7 @@ use crate::{
     },
     post_parser::parse_dynamic_item,
     utils::wait_until_enter,
-    wbi_sign::{encode_wbi, get_wbi_keys},
+    wbi_sign::WbiSign,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -92,24 +91,26 @@ async fn fetch_post_replies_from_browser(
                 return;
             }
 
-            if let Some(last_fetched_at) = p.last_fetched_at {
-                if config.skip_recently_fetched_days > 0 {
-                    let cooldown_ms =
-                        config.skip_recently_fetched_days as u64 * 24 * 60 * 60 * 1000;
-                    let elapsed_ms = (std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as u64)
-                        - (last_fetched_at * 1000);
-                    let elapsed_days = elapsed_ms / (24 * 60 * 60 * 1000);
-                    if elapsed_ms < cooldown_ms {
-                        println!(
-                            "动态 {} 在冷却期内（{}天前获取过），跳过",
-                            oid, elapsed_days
-                        );
-                        return;
-                    }
-                }
+            if let Some(_last_fetched_at) = p.last_fetched_at {
+                println!("当前动态已完成总体获取，请通过追加模式进行更新");
+                return;
+                // if config.skip_recently_fetched_days > 0 {
+                //     let cooldown_ms =
+                //         config.skip_recently_fetched_days as u64 * 24 * 60 * 60 * 1000;
+                //     let elapsed_ms = (std::time::SystemTime::now()
+                //         .duration_since(std::time::UNIX_EPOCH)
+                //         .unwrap()
+                //         .as_millis() as u64)
+                //         - (last_fetched_at * 1000);
+                //     let elapsed_days = elapsed_ms / (24 * 60 * 60 * 1000);
+                //     if elapsed_ms < cooldown_ms {
+                //         println!(
+                //             "动态 {} 在冷却期内（{}天前获取过），跳过",
+                //             oid, elapsed_days
+                //         );
+                //         return;
+                //     }
+                // }
             }
         }
     }
@@ -129,28 +130,17 @@ async fn fetch_post_replies_from_browser(
             FetchMode::Refresh => "重新",
         }
     );
-
+    let wbi_sign = WbiSign::new().await;
     while has_more {
         let mut error_retry_count = 0;
         let mut success = false;
 
         while !success {
-            let wbi_key = match get_wbi_keys().await {
-                Ok(val) => val,
-                Error => {
-                    eprintln!("获取wbi密钥失败，等待 10 秒后重试");
-                    thread::sleep(Duration::from_secs(10));
-                    continue;
-                }
-            };
-            let wbi_signed_params = encode_wbi(
-                vec![
-                    ("oid", oid.to_string()),
-                    ("type", type_val.to_string()),
-                    ("pn", page_num.to_string()),
-                ],
-                wbi_key,
-            );
+            let wbi_signed_params = wbi_sign.encode_wbi(vec![
+                ("oid", oid.to_string()),
+                ("type", type_val.to_string()),
+                ("pn", page_num.to_string()),
+            ]);
             let exec_code = r#"
             (async () => {
                 async function fetchPostReplies() {

@@ -10,7 +10,7 @@ pub fn open_browser(
 ) -> Result<Browser, Box<dyn Error>> {
     let user_data_dir = Some(PathBuf::from_str(user_data_dir_path)?);
     let options = LaunchOptionsBuilder::default()
-        .headless(headless)
+        .headless(headless || debug)
         .devtools(debug)
         .user_data_dir(user_data_dir)
         .idle_browser_timeout(Duration::from_hours(1))

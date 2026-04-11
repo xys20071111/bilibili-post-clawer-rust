@@ -30,66 +30,12 @@ struct ResWbi {
     data: Data,
 }
 
-// 对 imgKey 和 subKey 进行字符顺序打乱编码
-fn get_mixin_key(orig: &[u8]) -> String {
-    MIXIN_KEY_ENC_TAB
-        .iter()
-        .take(32)
-        .map(|&i| orig[i] as char)
-        .collect::<String>()
+pub struct WbiSign {
+    img_key: String,
+    sub_key: String,
 }
 
-fn get_url_encoded(s: &str) -> String {
-    s.chars()
-        .filter_map(|c| match c.is_ascii_alphanumeric() || "-_.~".contains(c) {
-            true => Some(c.to_string()),
-            false => {
-                // 过滤 value 中的 "!'()*" 字符
-                if "!'()*".contains(c) {
-                    return None;
-                }
-                let encoded = c
-                    .encode_utf8(&mut [0; 4])
-                    .bytes()
-                    .fold("".to_string(), |acc, b| acc + &format!("%{:02X}", b));
-                Some(encoded)
-            }
-        })
-        .collect::<String>()
-}
-
-// 为请求参数进行 wbi 签名
-pub fn encode_wbi(params: Vec<(&str, String)>, (img_key, sub_key): (String, String)) -> String {
-    let cur_time = match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(t) => t.as_secs(),
-        Err(_) => panic!("SystemTime before UNIX EPOCH!"),
-    };
-    _encode_wbi(params, (img_key, sub_key), cur_time)
-}
-
-fn _encode_wbi(
-    mut params: Vec<(&str, String)>,
-    (img_key, sub_key): (String, String),
-    timestamp: u64,
-) -> String {
-    let mixin_key = get_mixin_key((img_key + &sub_key).as_bytes());
-    // 添加当前时间戳
-    params.push(("wts", timestamp.to_string()));
-    // 重新排序
-    params.sort_by(|a, b| a.0.cmp(b.0));
-    // 拼接参数
-    let query = params
-        .iter()
-        .map(|(k, v)| format!("{}={}", get_url_encoded(k), get_url_encoded(v)))
-        .collect::<Vec<_>>()
-        .join("&");
-    // 计算签名
-    let web_sign = format!("{:?}", md5::compute(query.clone() + &mixin_key));
-    // 返回最终的 query
-    query + &format!("&w_rid={}", web_sign)
-}
-
-pub async fn get_wbi_keys() -> Result<(String, String), reqwest::Error> {
+async fn get_wbi_keys() -> Result<(String, String), reqwest::Error> {
     let client = reqwest::Client::new();
     let response_data = client
      .get("https://api.bilibili.com/x/web-interface/nav")
@@ -114,4 +60,75 @@ fn take_filename(url: String) -> Option<String> {
     url.rsplit_once('/')
         .and_then(|(_, s)| s.rsplit_once('.'))
         .map(|(s, _)| s.to_string())
+}
+
+// 对 imgKey 和 subKey 进行字符顺序打乱编码
+fn get_mixin_key(orig: &[u8]) -> String {
+    MIXIN_KEY_ENC_TAB
+        .iter()
+        .take(32)
+        .map(|&i| orig[i] as char)
+        .collect::<String>()
+}
+
+impl WbiSign {
+    pub async fn new() -> Self {
+        let keys = get_wbi_keys().await.unwrap();
+        Self {
+            img_key: keys.0,
+            sub_key: keys.1,
+        }
+    }
+
+    fn get_url_encoded(&self, s: &str) -> String {
+        s.chars()
+            .filter_map(|c| match c.is_ascii_alphanumeric() || "-_.~".contains(c) {
+                true => Some(c.to_string()),
+                false => {
+                    // 过滤 value 中的 "!'()*" 字符
+                    if "!'()*".contains(c) {
+                        return None;
+                    }
+                    let encoded = c
+                        .encode_utf8(&mut [0; 4])
+                        .bytes()
+                        .fold("".to_string(), |acc, b| acc + &format!("%{:02X}", b));
+                    Some(encoded)
+                }
+            })
+            .collect::<String>()
+    }
+
+    // 为请求参数进行 wbi 签名
+    pub fn encode_wbi(&self, params: Vec<(&str, String)>) -> String {
+        let cur_time = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(t) => t.as_secs(),
+            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+        };
+        self._encode_wbi(params, &self.img_key, &self.sub_key, cur_time)
+    }
+
+    fn _encode_wbi(
+        &self,
+        mut params: Vec<(&str, String)>,
+        img_key: &String,
+        sub_key: &String,
+        timestamp: u64,
+    ) -> String {
+        let mixin_key = get_mixin_key((img_key.clone() + sub_key.clone().as_str()).as_bytes());
+        // 添加当前时间戳
+        params.push(("wts", timestamp.to_string()));
+        // 重新排序
+        params.sort_by(|a, b| a.0.cmp(b.0));
+        // 拼接参数
+        let query = params
+            .iter()
+            .map(|(k, v)| format!("{}={}", self.get_url_encoded(k), self.get_url_encoded(v)))
+            .collect::<Vec<_>>()
+            .join("&");
+        // 计算签名
+        let web_sign = format!("{:?}", md5::compute(query.clone() + &mixin_key));
+        // 返回最终的 query
+        query + &format!("&w_rid={}", web_sign)
+    }
 }
