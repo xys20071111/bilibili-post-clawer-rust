@@ -74,7 +74,10 @@ pub fn fetch_post_ids_from_browser(
                     let parsed_post = parse_dynamic_item(item);
                     let id = parsed_post.id;
                     let publish_time = parsed_post.publish_time.unwrap_or(0);
-                    if publish_time < stop_at.clone() {
+                    if publish_time < stop_at.clone()
+                        && (item["modules"]["module_tag"] == serde_json::Value::Null
+                            || item["modules"]["module_tag"]["text"] != "置顶")
+                    {
                         println!("动态 {} 发布时间早于 {}，停止获取！", id, stop_at);
                         return;
                     }
