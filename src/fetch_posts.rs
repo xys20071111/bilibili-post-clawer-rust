@@ -153,7 +153,12 @@ return await fetchPostDetails();
                     }
                     _ => {
                         eprintln!("请求出错，错误码: {}. 是不是需要人机验证了?", error_code);
-                        wait_until_enter();
+                        if error_code == -352 {
+                            eprintln!("休眠60秒");
+                            thread::sleep(Duration::from_secs(60));
+                        } else {
+                            wait_until_enter();
+                        }
                     }
                 }
             } else {

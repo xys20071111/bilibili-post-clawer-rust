@@ -1,4 +1,3 @@
-use futures_util::StreamExt;
 use std::{thread, time, time::Duration};
 
 use headless_chrome::Tab;
@@ -28,11 +27,10 @@ pub async fn fetch_replies_from_browser(
     config: &Configure,
     mode: FetchMode,
 ) {
-    let mut posts = result_db.get_all_posts_cursor().await;
+    let posts = result_db.get_all_posts_cursor().await;
     let mut post_ids: Vec<(u64, u64)> = Vec::new();
-    while posts.has_next() {
-        let post = posts.next().await.unwrap().unwrap().data;
-        let parsed = parse_dynamic_item(&serde_json::to_value(post).unwrap());
+    for post in posts {
+        let parsed = parse_dynamic_item(&serde_json::to_value(post.data).unwrap());
         if let Some(comment_id) = parsed.comment_area.comment_id {
             let comment_id_num = comment_id.parse::<u64>().ok().unwrap();
             let comment_type = parsed.comment_area.comment_type.unwrap();

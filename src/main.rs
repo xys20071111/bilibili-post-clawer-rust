@@ -19,7 +19,7 @@ use std::{
 use clap::Command;
 use fetch_reply::FetchMode;
 
-use futures_util::StreamExt;
+use headless_chrome::{Browser, Tab, protocol::cdp::Network};
 use open_page::inject_functions;
 
 use crate::{
@@ -39,7 +39,9 @@ async fn main() {
             Command::new("login")
                 .about("登录B站账号")
                 .arg(clap::arg!(-c --config <FILE> "配置文件").required(true))
-                .arg(clap::arg!(-d --debug "开启devtool")),
+                .arg(clap::arg!(-d --debug "开启devtool"))
+                .arg(clap::arg!(-l --lightpanda "[实验性] 为lightpanda浏览器保存cookie"))
+                .arg(clap::arg!(-s --save_path <PATH> "cookie文件保存路径")),
         )
         .subcommand(
             Command::new("post")
@@ -47,7 +49,10 @@ async fn main() {
                 .arg(clap::arg!(-c --config <FILE> "配置文件").required(true))
                 .arg(clap::arg!(-d --debug "开启devtool"))
                 .arg(clap::arg!(--resume "从上次停止的位置继续（默认）"))
-                .arg(clap::arg!(--refresh "从头开始重新获取")),
+                .arg(clap::arg!(--refresh "从头开始重新获取"))
+                .arg(clap::arg!(-b --browser "[实验性] 使用其他无头浏览器"))
+                .arg(clap::arg!(-e --endpoint <URL> "Lightpanda浏览器的主机名"))
+                .arg(clap::arg!(-C --cookie_path <PATH> "cookie文件保存路径")),
         )
         .subcommand(
             Command::new("reply")
@@ -55,7 +60,10 @@ async fn main() {
                 .arg(clap::arg!(-c --config <FILE> "配置文件").required(true))
                 .arg(clap::arg!(-d --debug "开启devtool"))
                 .arg(clap::arg!(--resume "从上次停止的页码继续（默认）"))
-                .arg(clap::arg!(--refresh "从第一页重新开始")),
+                .arg(clap::arg!(--refresh "从第一页重新开始"))
+                .arg(clap::arg!(-b --browser "[实验性] 使用其他无头浏览器"))
+                .arg(clap::arg!(-e --endpoint <URL> "Lightpanda浏览器的主机名"))
+                .arg(clap::arg!(-C --cookie_path <PATH> "cookie文件保存路径")),
         )
         .subcommand(
             Command::new("export-post")
@@ -71,8 +79,13 @@ async fn main() {
         Some((command_name, sub_matches)) => match command_name {
             "login" => {
                 let config_path = sub_matches.get_one::<String>("config").unwrap();
-                let debug = sub_matches.get_flag("debug");
-                handle_login_mode(config_path, debug).await;
+                let lp = sub_matches.get_flag("lightpanda");
+                if lp {
+                    let save_path = sub_matches.get_one::<String>("save_path").unwrap();
+                    handle_login_mode(config_path, true, save_path).await;
+                } else {
+                    handle_login_mode(config_path, false, &String::new()).await;
+                }
             }
             "post" => {
                 let config_path = sub_matches.get_one::<String>("config").unwrap();
@@ -81,7 +94,20 @@ async fn main() {
                     sub_matches.get_flag("resume"),
                     sub_matches.get_flag("refresh"),
                 );
-                handle_post_mode(config_path, debug, mode).await;
+                let lp = sub_matches.get_flag("browser");
+                if lp {
+                    let endpoint = sub_matches.get_one::<String>("endpoint").unwrap();
+                    // let port = sub_matches.get_one::<String>("port").unwrap();
+                    let cookie_path = sub_matches.get_one::<String>("cookie_path").unwrap();
+                    let mut cookie_file = File::open(cookie_path).unwrap();
+                    let mut raw_cookie_json = String::new();
+                    cookie_file.read_to_string(&mut raw_cookie_json).unwrap();
+                    let cs = serde_json::from_str::<Vec<Network::CookieParam>>(&raw_cookie_json)
+                        .unwrap();
+                    handle_post_mode_external(config_path, mode, &endpoint, cs).await;
+                } else {
+                    handle_post_mode_cr(config_path, debug, mode).await;
+                }
             }
             "reply" => {
                 let config_path = sub_matches.get_one::<String>("config").unwrap();
@@ -115,45 +141,47 @@ fn get_fetch_mode(_resume: bool, refresh: bool) -> FetchMode {
     }
 }
 
-async fn handle_login_mode(config_path: &str, _debug: bool) {
+async fn handle_login_mode(config_path: &str, lp: bool, cookie_path: &String) {
     let config = load_config(config_path);
     let browser = open_page::open_browser(false, false, &config.browser_data_path).unwrap();
     let tab = browser.new_tab().unwrap();
     tab.navigate_to("https://www.bilibili.com").unwrap();
     inject_functions(&tab);
     wait_until_enter();
+    if lp {
+        let cookies_json = serde_json::to_value(tab.get_cookies().unwrap())
+            .unwrap()
+            .to_string();
+        let mut output_file = File::create_new(cookie_path).unwrap();
+        output_file.write(cookies_json.as_bytes()).unwrap();
+    }
+    tab.close(false).unwrap();
     exit(0)
 }
 
 async fn handle_export_post(config_path: &str, output_file_path: &str, raw: bool) {
     let config = load_config(config_path);
-    let result_db = ResultDb::new(&config.mongodb).await;
-    let mut posts = result_db.get_all_posts_cursor().await;
+    let result_db = ResultDb::new(&config).await;
+    let posts = result_db.get_all_posts_cursor().await;
     let mut output_file = File::create_new(output_file_path).unwrap();
-    while posts.has_next() {
+    for item in posts {
         if raw {
-            let post = posts.next().await.unwrap().unwrap().data;
-            let post = serde_json::to_string(&post).unwrap();
+            let post = serde_json::to_string(&item.data).unwrap();
             output_file.write((post + "\n").as_bytes()).unwrap();
         } else {
-            let post = posts.next().await.unwrap().unwrap().data;
-            let post = parse_dynamic_item(&serde_json::to_value(post).unwrap());
+            let post = parse_dynamic_item(&serde_json::to_value(item.data).unwrap());
             let post = serde_json::to_string(&post).unwrap();
             output_file.write((post + "\n").as_bytes()).unwrap();
         }
     }
 }
 
-async fn handle_post_mode(config_path: &str, debug: bool, mode: FetchMode) {
+async fn handle_post_mode(tab: &Tab, config_path: &str, debug: bool, mode: FetchMode) {
     let config = load_config(config_path);
-    let browser =
-        open_page::open_browser(config.headless, debug, &config.browser_data_path.as_str())
-            .unwrap();
-    let tab = browser.new_tab().unwrap();
     tab.navigate_to("https://www.bilibili.com").unwrap();
     inject_functions(&tab);
 
-    let result_db = ResultDb::new(&config.mongodb).await;
+    let result_db = ResultDb::new(&config).await;
     let runtime_db = RuntimeDb::new(&config.runtime_db_name);
 
     match mode {
@@ -190,9 +218,8 @@ async fn handle_post_mode(config_path: &str, debug: bool, mode: FetchMode) {
     fetch_posts::fetch_post_details_from_browser(&tab, &result_db, &runtime_db, &pending_posts)
         .await;
 
-    let mut posts = result_db.get_all_posts_cursor().await;
-    while posts.has_next() {
-        let item = posts.next().await.unwrap().unwrap();
+    let posts = result_db.get_all_posts_cursor().await;
+    for item in posts {
         let data_value = serde_json::to_value(&item.data).unwrap();
         let parsed = parse_dynamic_item(&data_value);
         if let DynamicType::Forward = parsed.dynamic_type
@@ -213,6 +240,29 @@ async fn handle_post_mode(config_path: &str, debug: bool, mode: FetchMode) {
     }
 }
 
+async fn handle_post_mode_external(
+    config_path: &str,
+    mode: FetchMode,
+    endpoint: &String,
+    cs: Vec<Network::CookieParam>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let browser = Browser::connect(endpoint.to_owned()).unwrap();
+    let context = browser.new_context().unwrap();
+    let tab = context.new_tab().unwrap();
+    tab.set_cookies(cs).unwrap();
+    let _ = handle_post_mode(&tab, config_path, false, mode).await;
+    Ok(())
+}
+
+async fn handle_post_mode_cr(config_path: &str, debug: bool, mode: FetchMode) {
+    let config = load_config(config_path);
+    let browser =
+        open_page::open_browser(config.headless, debug, &config.browser_data_path.as_str())
+            .unwrap();
+    let tab = browser.new_tab().unwrap();
+    handle_post_mode(&tab, config_path, false, mode).await;
+}
+
 async fn handle_reply_mode(config_path: &str, debug: bool, mode: FetchMode) {
     let config = load_config(config_path);
     let browser =
@@ -222,7 +272,7 @@ async fn handle_reply_mode(config_path: &str, debug: bool, mode: FetchMode) {
     tab.navigate_to("https://www.bilibili.com").unwrap();
     inject_functions(&tab);
 
-    let result_db = ResultDb::new(&config.mongodb).await;
+    let result_db = ResultDb::new(&config).await;
     let runtime_db = RuntimeDb::new(&config.runtime_db_name);
 
     fetch_reply::fetch_replies_from_browser(&tab, &result_db, &runtime_db, &config, mode).await;
