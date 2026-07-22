@@ -23,7 +23,7 @@ use headless_chrome::{Browser, Tab, protocol::cdp::Network};
 use open_page::inject_functions;
 
 use crate::{
-    config_type::Configure,
+    config_type::{Configure, SourceConfig},
     db::{result_db::ResultDb, runtime_db::RuntimeDb},
     post_parser::{DynamicType, parse_dynamic_item},
     utils::wait_until_enter,
@@ -47,6 +47,7 @@ async fn main() {
             Command::new("post")
                 .about("获取动态")
                 .arg(clap::arg!(-c --config <FILE> "配置文件").required(true))
+                .arg(clap::arg!(-s --sources <FILE> "数据源配置文件").required(true))
                 .arg(clap::arg!(-d --debug "开启devtool"))
                 .arg(clap::arg!(--resume "从上次停止的位置继续（默认）"))
                 .arg(clap::arg!(--refresh "从头开始重新获取"))
@@ -89,6 +90,7 @@ async fn main() {
             }
             "post" => {
                 let config_path = sub_matches.get_one::<String>("config").unwrap();
+                let sources_path = sub_matches.get_one::<String>("sources").unwrap();
                 let debug = sub_matches.get_flag("debug");
                 let mode = get_fetch_mode(
                     sub_matches.get_flag("resume"),
@@ -104,9 +106,9 @@ async fn main() {
                     cookie_file.read_to_string(&mut raw_cookie_json).unwrap();
                     let cs = serde_json::from_str::<Vec<Network::CookieParam>>(&raw_cookie_json)
                         .unwrap();
-                    handle_post_mode_external(config_path, mode, &endpoint, cs).await;
+                    let _ = handle_post_mode_external(config_path, sources_path, mode, &endpoint, cs).await;
                 } else {
-                    handle_post_mode_cr(config_path, debug, mode).await;
+                    handle_post_mode_cr(config_path, sources_path, debug, mode).await;
                 }
             }
             "reply" => {
@@ -176,8 +178,9 @@ async fn handle_export_post(config_path: &str, output_file_path: &str, raw: bool
     }
 }
 
-async fn handle_post_mode(tab: &Tab, config_path: &str, debug: bool, mode: FetchMode) {
+async fn handle_post_mode(tab: &Tab, config_path: &str, sources_path: &str, debug: bool, mode: FetchMode) {
     let config = load_config(config_path);
+    let source_config = load_source_config(sources_path);
     tab.navigate_to("https://www.bilibili.com").unwrap();
     inject_functions(&tab);
 
@@ -186,7 +189,7 @@ async fn handle_post_mode(tab: &Tab, config_path: &str, debug: bool, mode: Fetch
 
     match mode {
         FetchMode::Resume => {
-            for item in &config.sources {
+            for item in &source_config.sources {
                 let last_fetch_time = runtime_db.get_source_last_fetch(item.id);
                 fetch_posts::fetch_post_ids_from_browser(
                     &tab,
@@ -200,7 +203,7 @@ async fn handle_post_mode(tab: &Tab, config_path: &str, debug: bool, mode: Fetch
             }
         }
         FetchMode::Refresh => {
-            for item in &config.sources {
+            for item in &source_config.sources {
                 fetch_posts::fetch_post_ids_from_browser(
                     &tab,
                     &item,
@@ -242,6 +245,7 @@ async fn handle_post_mode(tab: &Tab, config_path: &str, debug: bool, mode: Fetch
 
 async fn handle_post_mode_external(
     config_path: &str,
+    sources_path: &str,
     mode: FetchMode,
     endpoint: &String,
     cs: Vec<Network::CookieParam>,
@@ -250,17 +254,17 @@ async fn handle_post_mode_external(
     let context = browser.new_context().unwrap();
     let tab = context.new_tab().unwrap();
     tab.set_cookies(cs).unwrap();
-    let _ = handle_post_mode(&tab, config_path, false, mode).await;
+    let _ = handle_post_mode(&tab, config_path, sources_path, false, mode).await;
     Ok(())
 }
 
-async fn handle_post_mode_cr(config_path: &str, debug: bool, mode: FetchMode) {
+async fn handle_post_mode_cr(config_path: &str, sources_path: &str, debug: bool, mode: FetchMode) {
     let config = load_config(config_path);
     let browser =
         open_page::open_browser(config.headless, debug, &config.browser_data_path.as_str())
             .unwrap();
     let tab = browser.new_tab().unwrap();
-    handle_post_mode(&tab, config_path, false, mode).await;
+    handle_post_mode(&tab, config_path, sources_path, false, mode).await;
 }
 
 async fn handle_reply_mode(config_path: &str, debug: bool, mode: FetchMode) {
@@ -288,4 +292,11 @@ fn load_config(config_path: &str) -> Configure {
     let mut raw_config_json = String::new();
     config_file.read_to_string(&mut raw_config_json).unwrap();
     serde_json::from_str(&raw_config_json).unwrap()
+}
+
+fn load_source_config(sources_path: &str) -> SourceConfig {
+    let mut sources_file = File::open(sources_path).unwrap();
+    let mut raw_sources_json = String::new();
+    sources_file.read_to_string(&mut raw_sources_json).unwrap();
+    serde_json::from_str(&raw_sources_json).unwrap()
 }

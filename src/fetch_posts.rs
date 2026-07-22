@@ -75,11 +75,14 @@ pub fn fetch_post_ids_from_browser(
                     let id = parsed_post.id;
                     let publish_time = parsed_post.publish_time.unwrap_or(0);
                     if publish_time < stop_at.clone()
-                        && (item["modules"]["module_tag"] == serde_json::Value::Null
-                            || item["modules"]["module_tag"]["text"] != "置顶")
+                        && (item["modules"]["module_tag"] == serde_json::Value::Null)
+                        || item["modules"]["module_tag"]["text"].as_str().unwrap() != "置顶"
                     {
                         println!("动态 {} 发布时间早于 {}，停止获取！", id, stop_at);
                         return;
+                    }
+                    if item["modules"]["module_tag"]["text"].as_str().unwrap() == "置顶" && publish_time < stop_at.clone() {
+                            continue;
                     }
                     rumtime_db_instance.add_post_to_queue(id, &source.name);
                 }

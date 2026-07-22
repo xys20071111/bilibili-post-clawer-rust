@@ -38,5 +38,9 @@ pub struct Configure {
     pub exclude_fetched: bool,
     pub mongodb: Option<MongoDBConfigure>,
     pub postgresql: Option<PostgreSQLConfigure>,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct SourceConfig {
     pub sources: Vec<SourceStruct>,
 }
