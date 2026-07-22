@@ -5,3 +5,5 @@ original-project
 /dbs
 *.jsonl
 *.profraw
+
+.qoder
